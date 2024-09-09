@@ -12,7 +12,7 @@
 import os.path
 
 from expert_utils import model_list
-from ...data_utils import read_json, write_json
+from ..data_utils import read_json, write_json
 from tqdm import tqdm
 import random
 random.seed(0)
@@ -32,7 +32,10 @@ def get_predictions(root, image_name):
 
     pred_str = []
     for k, v in pred.items():
-        pred_str.append(f"{k}: {v:.2f}")
+        if v > 0.5:
+            pred_str.append(f"{k.lower().replace('_', ' ')}: yes\n")
+        else:
+            pred_str.append(f"{k.lower().replace('_', ' ')}: no\n")
     return ", ".join(pred_str)
 
 
