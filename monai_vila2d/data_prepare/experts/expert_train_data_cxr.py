@@ -62,7 +62,7 @@ def main():
         new_conv.append({"from": "gpt", "value": "This looks like an chest x-ray. Let me trigger <CXR()>."})
         first_prompt = first_prompt.replace("\n<image>", "")
         first_prompt = first_prompt.replace("<image>", "")
-        new_conv.append({"from": "human", "value": f"The resulting predictions are: {predictions}. Take these likelihoods into account when responding to this prompt:\n{first_prompt}"})
+        new_conv.append({"from": "human", "value": f"The resulting predictions are: {predictions}. Take these predictions into account when responding to this prompt:\n{first_prompt}"})
         new_conv.extend(conv[1::])
 
         entry["conversations"] = new_conv
