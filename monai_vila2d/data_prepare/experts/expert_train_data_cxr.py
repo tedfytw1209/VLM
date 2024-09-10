@@ -9,62 +9,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os.path
-
-from expert_utils import model_list
-from ..data_utils import read_json, write_json
+import argparse
+from expert_utils import model_list, assert_image_placeholder, get_predictions, add_expert_conversation
+from data_utils import read_json, write_json
 from tqdm import tqdm
 import random
 random.seed(0)
 
 assert isinstance(model_list, str)
 
-pred_root = "/Users/hroth/Data/VLM/cxr/MIMIC_VQA/images"
-root_dir = "./"
 
-n = 100_000
-test_frac = 0.5
+def main(args):
+    in_data = read_json(args.in_datafile)
 
+    assert args.n_samples < len(in_data)
 
-def get_predictions(root, image_name):
-    predictions_file = os.path.join(root, image_name + ".json")
-    pred = read_json(predictions_file)
-
-    pred_str = []
-    for k, v in pred.items():
-        if v > 0.5:
-            pred_str.append(f"{k.lower().replace('_', ' ')}: yes\n")
-        else:
-            pred_str.append(f"{k.lower().replace('_', ' ')}: no\n")
-    return ", ".join(pred_str)
-
-
-def main():
-    in_data = read_json("/Users/hroth/Data/Childrens/VisionAndLanguage/all_images_json/llava_med_instruct_mimicvqa_train.json")
-
-    assert n < len(in_data)
-
-    out_fileprefix = "../experts/mimic_vqa/llava_med_instruct_mimicvqa_expert"
-
-    in_data = random.sample(in_data, k=n)
+    in_data = random.sample(in_data, k=args.n_samples)
 
     count = 0
     all_conversations = []
     for entry in tqdm(in_data, desc="creating train data..."):
         conv = entry["conversations"]
-        # append data
-        # Keep first question
-        assert conv[0]["from"] == "human"
-        first_prompt = conv[0]["value"]
-        predictions = get_predictions(pred_root, entry["image"])
-        new_conv = list()
-        new_conv.append({"from": "human", "value": model_list + f" This is a CXR image.\n" + first_prompt})
-        new_conv.append({"from": "gpt", "value": "This looks like an chest x-ray. Let me trigger <CXR()>."})
-        first_prompt = first_prompt.replace("\n<image>", "")
-        first_prompt = first_prompt.replace("<image>", "")
-        new_conv.append({"from": "human", "value": f"The resulting predictions are: {predictions}. Take these predictions into account when responding to this prompt:\n{first_prompt}"})
-        new_conv.extend(conv[1::])
 
+        # add expert instructions
+        predictions = get_predictions(args.pred_root, entry["image"])
+        new_conv = add_expert_conversation(conv, predictions)
+
+        assert_image_placeholder(new_conv)
         entry["conversations"] = new_conv
 
         all_conversations.append(entry)
@@ -72,10 +43,10 @@ def main():
 
     print(f"Converted {len(all_conversations)} conversations")
 
-    out_train_file = out_fileprefix + "_train.json"
-    out_test_file = out_fileprefix + "_test.json"
+    out_train_file = args.out_fileprefix + "_train.json"
+    out_test_file = args.out_fileprefix + "_test.json"
 
-    split_idx = int(test_frac*len(all_conversations))
+    split_idx = int(args.test_frac*len(all_conversations))
 
     random.shuffle(all_conversations)
     test_conversations = all_conversations[0:split_idx]
@@ -86,4 +57,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--in_datafile", type=str, required=True)
+    parser.add_argument("--pred_root", type=str, required=True)
+    parser.add_argument("--out_fileprefix", type=str, required=True)
+    parser.add_argument("--n_samples", type=int, default=100_000)
+    parser.add_argument("--test_frac", type=float, default=0.5)
+    args = parser.parse_args()
+
+    main(args)
