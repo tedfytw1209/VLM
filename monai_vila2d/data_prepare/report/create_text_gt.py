@@ -226,7 +226,7 @@ def remove_question_sentences(sentences):
     """
     Remove sentences that contain question marks from the list.
     """
-    return [sentence for sentence in sentences if '?' not in sentence]
+    return [sentence for sentence in sentences if "?" not in sentence]
 
 
 # for mimic-cxr-jpg training set
@@ -622,7 +622,7 @@ def customize_report(report, text_filepath):
     report = report.replace(
         "In comparison with the study of ___, there is again some",
         "There is again some",
-    )   
+    )
     report = report.replace(
         "FINDINGS:  In comparison with study of ___, there is little change and no",
         "FINDINGS: there is little change and no",
@@ -634,7 +634,7 @@ def customize_report(report, text_filepath):
     report = report.replace(
         "In comparison to ___ radiograph, there has been development of",
         "FINDINGS: there has been development of",
-    )   
+    )
     report = report.replace(
         "As compared to ___ radiograph, left pigtail pleural catheter",
         "FINDINGS: left pigtail pleural catheter",

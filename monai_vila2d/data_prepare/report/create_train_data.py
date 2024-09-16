@@ -21,9 +21,7 @@ def save_dataset(dataset_type, dataset_name, save_path, data):
 image_dir = "/mnt/drive1/mimic-cxr-512_v2/images"
 output_dir = "/localhome/local-dongy/projects/vlm/gt/gt_train_v3_training_1.1"
 
-list_filepath = (
-    "/localhome/local-dongy/projects/vlm/lists/mimic-cxr-2.0.0-train_v3_training_1.1_text.txt"
-)
+list_filepath = "/localhome/local-dongy/projects/vlm/lists/mimic-cxr-2.0.0-train_v3_training_1.1_text.txt"
 text_dir = "/localhome/local-dongy/projects/vlm/text_gt/training_1.1"
 
 with open(list_filepath, "r") as file:
