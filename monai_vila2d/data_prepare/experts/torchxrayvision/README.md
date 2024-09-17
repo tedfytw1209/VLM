@@ -64,3 +64,7 @@ python make_mimic_expert_json.py
 
 For more details about the dataset json file:
 please see https://github.com/NVlabs/VILA/tree/main/data_prepare
+
+
+The data split files and classification labels `mimic-cxr-2.0.0-split.csv` and `mimic-cxr-2.0.0-merged-chexpert.csv`
+are from the MIMIC-CXR dataset.
