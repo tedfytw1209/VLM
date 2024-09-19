@@ -1,4 +1,13 @@
-# #!/usr/bin/env python
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import os
 import base64
@@ -18,11 +27,11 @@ def save_dataset(dataset_type, dataset_name, save_path, data):
         pickle.dump(data, f)
 
 
-image_dir = "/mnt/drive1/mimic-cxr-512_v2/images"
-output_dir = "/localhome/local-dongy/projects/vlm/gt/gt_train_v3_training_1.1"
+image_dir = "./images"
+output_dir = "./gt"
 
-list_filepath = "/localhome/local-dongy/projects/vlm/lists/mimic-cxr-2.0.0-train_v3_training_1.1_text.txt"
-text_dir = "/localhome/local-dongy/projects/vlm/text_gt/training_1.1"
+list_filepath = "./list.txt"
+text_dir = "./text_gt"
 
 with open(list_filepath, "r") as file:
     filepaths = file.readlines()
@@ -43,9 +52,6 @@ for _i in range(num_cases):
     image_base64_str = encode_image_to_base64(image_filepath)
     with open(text_filepath, "r") as file:
         reference_report = file.read()
-    # reference_report = reference_report.strip()
-    # reference_report = reference_report.replace("\n", " ").replace("  ", " ")
-    print(reference_report)
 
     _dict = {
         "question": "Describe the image in detail.",
@@ -53,8 +59,5 @@ for _i in range(num_cases):
         "answer": reference_report,
     }
     data_dict.append(_dict)
-    print(f"data_dict: {len(data_dict)}")
 
-    # input()
-
-save_dataset("captioning", "mimic_v2_train_v3_training_1.1", output_dir, data_dict)
+save_dataset("captioning", "mimic_train", output_dir, data_dict)
