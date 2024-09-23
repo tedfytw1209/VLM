@@ -8,3 +8,6 @@ exclude = [
   "*test_*",
   "./.vscode/*",
 ]
+
+[lint]
+select = ["D1"]
