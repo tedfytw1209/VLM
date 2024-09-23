@@ -1,0 +1,13 @@
+line-length = 122
+
+exclude = [
+  "build/*",
+  "docs/*",
+  "setup.py",
+  "venv*/",
+  "*test_*",
+  "./.vscode/*",
+]
+
+[lint]
+select = ["D1"]
