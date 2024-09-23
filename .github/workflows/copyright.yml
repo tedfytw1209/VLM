@@ -20,4 +20,4 @@ jobs:
 
       - name: Run copyright check
         run: |
-          python -m .github/check_license.py
+          python .github/check_license.py
