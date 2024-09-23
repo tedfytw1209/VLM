@@ -1,0 +1,10 @@
+line-length = 122
+
+exclude = [
+  "build/*",
+  "docs/*",
+  "setup.py",
+  "venv*/",
+  "*test_*",
+  "./.vscode/*",
+]
