@@ -67,10 +67,6 @@ def add_expert_conversation(conv, preds):
         "Your response must take into account the image and the provided predictions; please ensure you review both carefully.",
         "To provide an accurate response, it is crucial that you examine the image and consider the predictions; failure to do so may result in an incomplete or inaccurate answer.",
         "Note that the forceful variations are more direct and emphasize the importance of following the instructions, while the polite variations are more courteous and encouraging.",
-        # Do not change expert predictions
-        "Please analyze the image, but do not modify the provided predictions; instead, use them as-is in your response.",
-        "When responding to this prompt, kindly keep the predictions intact and do not alter them in any way.",
-        "We'd appreciate it if you could review the image and incorporate the predictions into your response without making any changes to them.",
         ### Do not change predictions ###
         # Polite Variations:
         "Please analyze the image, but do not modify the provided predictions; instead, use them as-is in your response.",
