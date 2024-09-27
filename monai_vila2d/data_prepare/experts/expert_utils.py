@@ -56,6 +56,7 @@ def get_predictions(root, image_name):
 def add_expert_conversation(conv, preds):
 
     consideration_options = [
+        ### Consider predictions ###
         # Polite
         "Analyze the image and take these predictions into account when responding to this prompt:",
         "Please consider the image and incorporate the provided predictions into your response.",
