@@ -38,6 +38,8 @@ def read_txt(filename):
     assert ".txt" in filename
     with open(filename, "r") as f:
         data = f.readlines()
+    if ignore_newline:
+        data = [d.replace("\n", "") for d in data]
     return data
 
 
