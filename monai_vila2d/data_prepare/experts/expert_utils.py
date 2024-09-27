@@ -10,6 +10,7 @@
 # limitations under the License.
 
 import os
+import random
 
 from data_utils import read_json
 
@@ -53,6 +54,38 @@ def get_predictions(root, image_name):
 
 
 def add_expert_conversation(conv, preds):
+
+    consideration_options = [
+        # Polite
+        "Analyze the image and take these predictions into account when responding to this prompt:",
+        "Please consider the image and incorporate the provided predictions into your response.",
+        "When responding to this prompt, kindly take a moment to review the image and factor in the predictions.",
+        "We'd appreciate it if you could analyze the image and keep the predictions in mind as you craft your response.",
+        # Forceful
+        "It is essential that you thoroughly analyze the image and incorporate the predictions into your response.",
+        "Your response must take into account the image and the provided predictions; please ensure you review both carefully.",
+        "To provide an accurate response, it is crucial that you examine the image and consider the predictions; failure to do so may result in an incomplete or inaccurate answer.",
+        "Note that the forceful variations are more direct and emphasize the importance of following the instructions, while the polite variations are more courteous and encouraging.",
+        # Do not change expert predictions
+        "Please analyze the image, but do not modify the provided predictions; instead, use them as-is in your response.",
+        "When responding to this prompt, kindly keep the predictions intact and do not alter them in any way.",
+        "We'd appreciate it if you could review the image and incorporate the predictions into your response without making any changes to them.",
+        ### Do not change predictions ###
+        # Polite Variations:
+        "Please analyze the image, but do not modify the provided predictions; instead, use them as-is in your response.",
+        "When responding to this prompt, kindly keep the predictions intact and do not alter them in any way.",
+        "We'd appreciate it if you could review the image and incorporate the predictions into your response without making any changes to them.",
+        # Forceful Variations:
+        "Do not alter the predictions under any circumstances; analyze the image and incorporate the predictions exactly as they are into your response.",
+        "The predictions are fixed and must not be changed; ensure that you review the image and incorporate the predictions verbatim into your response.",
+        "It is crucial that the predictions remain unchanged; analyze the image and use the predictions as-is in your response, without modification or alteration of any kind.",
+        # Additional Variations:
+        "Treat the predictions as fixed inputs and do not attempt to update or modify them in your response.",
+        "Use the predictions as a fixed constraint and ensure that your response is consistent with them, without making any changes to the predictions themselves.",
+        "The predictions are a given; analyze the image and respond accordingly, without altering the predictions in any way.",
+        "These variations aim to convey the instruction that the model should not change the predictions, while still allowing for analysis and incorporation of the image into the response."
+    ]
+
     """Adds expert conversation to the conversation."""
     # Keep first question
     assert conv[0]["from"] == "human"
@@ -63,12 +96,14 @@ def add_expert_conversation(conv, preds):
     first_prompt = first_prompt.replace("<image>", "")
     new_conv.append({"from": "human", "value": model_list + f"<image> This is a CXR image.\n" + first_prompt})
     new_conv.append({"from": "gpt", "value": "This looks like an chest x-ray. Let me first trigger <CXR()>."})
+    consider = random.choice(consideration_options)
     new_conv.append(
         {
             "from": "human",
-            "value": f"The resulting predictions are:\n{preds}. Analyze the image and take these predictions into account when responding to this prompt:\n{first_prompt}",
+            "value": f"The resulting predictions are:\n{preds}. {consider}\n{first_prompt}",
         }
     )
+    # append original follow-up questions
     new_conv.extend(conv[1::])
 
     return new_conv

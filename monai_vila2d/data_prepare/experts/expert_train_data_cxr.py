@@ -23,15 +23,13 @@ assert isinstance(model_list, str)
 
 def main(args):
     """Prepare expert training data for CXR."""
-    in_data = read_json(args.in_datafile)
+    in_data = read_json(args.in_datapath)
 
-    assert args.n_samples < len(in_data)
-
-    in_data = random.sample(in_data, k=args.n_samples)
+    assert len(in_data) > 0, f"No data read from {args.in_datapath}"
 
     count = 0
     all_conversations = []
-    for entry in tqdm(in_data, desc="creating train data..."):
+    for entry in tqdm(in_data, desc="creating train data"):
         conv = entry["conversations"]
 
         # add expert instructions
@@ -46,26 +44,14 @@ def main(args):
 
     print(f"Converted {len(all_conversations)} conversations")
 
-    out_train_file = args.out_fileprefix + "_train.json"
-    out_test_file = args.out_fileprefix + "_test.json"
-
-    split_idx = int(args.test_frac * len(all_conversations))
-
-    random.shuffle(all_conversations)
-    test_conversations = all_conversations[0:split_idx]
-    train_conversations = all_conversations[split_idx::]
-
-    write_json(train_conversations, out_train_file)
-    write_json(test_conversations, out_test_file)
+    write_json(all_conversations, args.out_datapath)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--in_datafile", type=str, required=True)
+    parser.add_argument("--in_datapath", type=str, required=True)
     parser.add_argument("--pred_root", type=str, required=True)
-    parser.add_argument("--out_fileprefix", type=str, required=True)
-    parser.add_argument("--n_samples", type=int, default=100_000)
-    parser.add_argument("--test_frac", type=float, default=0.5)
+    parser.add_argument("--out_datapath", type=str, required=True)
     args = parser.parse_args()
 
     main(args)
