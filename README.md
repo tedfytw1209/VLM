@@ -50,7 +50,7 @@ For details, see [here](./monai_vila2d/README.md).
     ```bash
     git clone https://github.com/Project-MONAI/VLM --recursive
     cd VLM
-    python -m venv .venv
+    python3.10 -m venv .venv
     source .venv/bin/activate
     make demo_monai_vila2d
     ```
@@ -70,9 +70,10 @@ For details, see [here](./monai_vila2d/README.md).
 
 1. Start the Gradio demo:
     ```bash
-    python demo/gradio_monai_vila2d.py  \
-        --modelpath /data/checkpoints/<checkpoint-name> \
-        --convmode <llama_3 or vicuna_1> \
+    cd monai_vila2d/demo
+    python gradio_monai_vila2d.py  \
+        --modelpath /data/checkpoints/<8B-checkpoint-name> \
+        --convmode llama_3 \
         --port 7860
     ```
 
