@@ -1,10 +1,10 @@
 import argparse
 import os
-import requests
 import time
 from dataclasses import dataclass
 from typing import List, Tuple
 
+import requests
 import torch
 import transformers
 from huggingface_hub import snapshot_download
@@ -26,6 +26,7 @@ USER_PROMPT = "<image> Describe the image in details"
 IMAGE_DIR = "."
 IMAGE_PATH = "test.jpg"
 
+
 # Custom dataset class
 class CustomDataset(Dataset):
     def __init__(self, questions, image_folder, image_path, tokenizer, image_processor, model_config):
@@ -35,7 +36,7 @@ class CustomDataset(Dataset):
         self.tokenizer = tokenizer
         self.image_processor = image_processor
         self.model_config = model_config
-        self.image = Image.open(os.path.join(image_folder, image_path)).convert('RGB')
+        self.image = Image.open(os.path.join(image_folder, image_path)).convert("RGB")
         self.image_tensor = process_images([self.image], self.image_processor, self.model_config)[0]
 
     def __getitem__(self, index):
@@ -50,12 +51,13 @@ class CustomDataset(Dataset):
             image_tensor = self.image_tensor
         else:
             raise NotImplementedError
-        input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt')
+        input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
 
         return index, input_ids, image_tensor
 
     def __len__(self):
         return len(self.questions)
+
 
 @dataclass
 class DataCollatorForVisualTextGeneration(object):
@@ -63,22 +65,15 @@ class DataCollatorForVisualTextGeneration(object):
 
     def pad_sequence(self, input_ids, batch_first, padding_value):
         if self.tokenizer.padding_side == "left":
-            input_ids = [torch.flip(_input_ids, [0]) for _input_ids in input_ids] 
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids,
-            batch_first=batch_first,
-            padding_value=padding_value)
+            input_ids = [torch.flip(_input_ids, [0]) for _input_ids in input_ids]
+        input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=batch_first, padding_value=padding_value)
         if self.tokenizer.padding_side == "left":
             input_ids = torch.flip(input_ids, [1])
         return input_ids
 
-    def __call__(self,
-                 batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
         indices, input_ids, images = zip(*batch)
-        input_ids = self.pad_sequence(
-            input_ids,
-            batch_first=True,
-            padding_value=self.tokenizer.pad_token_id)
+        input_ids = self.pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id)
         images = torch.stack(images, dim=0)
         return indices, input_ids, images
 
@@ -88,18 +83,16 @@ def eval_model(args):
 
     model_path = snapshot_download(args.model)
     model_name = get_model_name_from_path(model_path)
-    tokenizer, model, image_processor, context_len = load_pretrained_model(
-        model_path, model_name
-    )
+    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, model_name)
 
     # set padding side to `left` for batch text generation
     model.config.tokenizer_padding_side = tokenizer.padding_side = "left"
 
-    questions = [{"text": args.user_prompt , "image": args.image_path}] * 12
+    questions = [{"text": args.user_prompt, "image": args.image_path}] * 12
     conv = conv_templates[args.conv_mode].copy()
     stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
     keywords = [stop_str]
-    
+
     dataset = CustomDataset(questions, args.image_dir, args.image_path, tokenizer, image_processor, model.config)
     collator = DataCollatorForVisualTextGeneration(tokenizer=tokenizer)
     data_loader = DataLoader(dataset, collate_fn=collator, batch_size=1, num_workers=4, shuffle=False)
@@ -109,15 +102,15 @@ def eval_model(args):
         stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)
         with torch.inference_mode():
             output_ids = model.generate(
-                input_ids.to(device='cuda', non_blocking=True),
-                images=image_tensor.to(dtype=torch.float16, device='cuda', non_blocking=True),
+                input_ids.to(device="cuda", non_blocking=True),
+                images=image_tensor.to(dtype=torch.float16, device="cuda", non_blocking=True),
                 do_sample=True if args.temperature > 0 else False,
                 temperature=args.temperature,
                 top_p=args.top_p,
                 num_beams=1,
                 max_new_tokens=1024,
                 use_cache=True,
-                stopping_criteria=[stopping_criteria]
+                stopping_criteria=[stopping_criteria],
             )
 
             l += len(output_ids[0])
@@ -132,6 +125,7 @@ def eval_model(args):
         outputs = outputs[: -len(stop_str)]
     outputs = outputs.strip()
     print(f"Assistant: {outputs}")
+
 
 if __name__ == "__main__":
     if not os.path.exists(os.path.join(IMAGE_DIR, IMAGE_PATH)):
