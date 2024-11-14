@@ -145,20 +145,24 @@ def get_filename_from_cd(url, cd):
 def get_slice_filenames(image_file: str, slice_index: int, ext: str = "jpg"):
     """Small helper function to get the slice filenames"""
     base_name = os.path.basename(image_file)
-    image_filename = base_name.replace(".nii.gz", f"_slice{slice_index}_img.{ext}")
-    seg_filename = base_name.replace(".nii.gz", f"_slice{slice_index}_seg.{ext}")
-    return image_filename, seg_filename
+    return base_name.replace(".nii.gz", f"_slice{slice_index}_img.{ext}")
 
 
-def _get_modality_url(image_url: str | None):
-    """Hardcoded prompt based on the file path"""
-    if not isinstance(image_url, str):
+def _get_modality_url(image_url_or_path: str | None):
+    """
+    Extract image modality by checking the URL or file path.
+    If the URL or file path contains ".nii.gz" and contain "mri_", then it is MRI, else it is CT.
+    If it contains "cxr_" then it is CXR, otherwise it is Unknown.
+    """
+    if not isinstance(image_url_or_path, str):
         return "Unknown"
-    if image_url.startswith("data:image"):
+    if image_url_or_path.startswith("data:image"):
         return "Unknown"
-    if ".nii.gz" in image_url.lower():
+    if ".nii.gz" in image_url_or_path.lower():
+        if "mri_" in image_url_or_path.lower():
+            return "MRI"
         return "CT"
-    if "cxr_" in image_url.lower():
+    if "cxr_" in image_url_or_path.lower():
         return "CXR"
     return "Unknown"
 
