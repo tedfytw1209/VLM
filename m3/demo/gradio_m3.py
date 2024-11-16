@@ -18,6 +18,7 @@ import time
 from copy import deepcopy
 from glob import glob
 from shutil import copyfile, rmtree
+from zipfile import ZipFile
 
 import gradio as gr
 import nibabel as nib
@@ -66,11 +67,16 @@ logging.getLogger("gradio").setLevel(logging.WARNING)
 
 # Sample images dictionary. It accepts either a URL or a local path.
 IMG_URLS_OR_PATHS = {
-    "CT Sample 1": "https://developer.download.nvidia.com/assets/Clara/monai/samples/liver_0.nii.gz",
+    "CT Sample 1": "https://developer.download.nvidia.com/assets/Clara/monai/samples/ct_liver_0.nii.gz",
     "CT Sample 2": "https://developer.download.nvidia.com/assets/Clara/monai/samples/ct_sample.nii.gz",
-    "Chest X-ray Sample 1": "https://developer.download.nvidia.com/assets/Clara/monai/samples/cxr_8e067d88-2ea4ee8d-21db2c6b-f78701cb-91ad53f9_v1.jpg",
-    "Chest X-ray Sample 2": "https://developer.download.nvidia.com/assets/Clara/monai/samples/cxr_51e9421b-c2f395da-5dd48889-7e307aca-1472d6a6_v1.jpg",
-    "Chest X-ray Sample 3": "https://developer.download.nvidia.com/assets/Clara/monai/samples/cxr_c2af2ab3-6a11cbae-d9fa4d64-21ab221e-cf6f2146_v1.jpg",
+    # "MRI Sample 1": [
+    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t1.nii.gz",
+    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t1ce.nii.gz",
+    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t2.nii.gz",
+    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_flair.nii.gz",
+    # ],
+    "Chest X-ray Sample 1": "https://developer.download.nvidia.com/assets/Clara/monai/samples/cxr_00026451_030.jpg",
+    "Chest X-ray Sample 2": "https://developer.download.nvidia.com/assets/Clara/monai/samples/cxr_00029943_005.jpg",
 }
 
 MODEL_CARDS = "Here is a list of available expert models:\n<BRATS(args)> Modality: MRI, Task: segmentation, Overview: A pre-trained model for volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs based on BraTS 2018 data, Accuracy: Tumor core (TC): 0.8559 - Whole tumor (WT): 0.9026 - Enhancing tumor (ET): 0.7905 - Average: 0.8518, Valid args are: None\n<VISTA3D(args)> Modality: CT, Task: segmentation, Overview: domain-specialized interactive foundation model developed for segmenting and annotating human anatomies with precision, Accuracy: 127 organs: 0.792 Dice on average, Valid args are: 'everything', 'hepatic tumor', 'pancreatic tumor', 'lung tumor', 'bone lesion', 'organs', 'cardiovascular', 'gastrointestinal', 'skeleton', or 'muscles'\n<VISTA2D(args)> Modality: cell imaging, Task: segmentation, Overview: model for cell segmentation, which was trained on a variety of cell imaging outputs, including brightfield, phase-contrast, fluorescence, confocal, or electron microscopy, Accuracy: Good accuracy across several cell imaging datasets, Valid args are: None\n<CXR(args)> Modality: chest x-ray (CXR), Task: classification, Overview: pre-trained model which are trained on large cohorts of data, Accuracy: Good accuracy across several diverse chest x-rays datasets, Valid args are: None\nGive the model <NAME(args)> when selecting a suitable expert model.\n"
@@ -106,6 +112,10 @@ HTML_PLACEHOLDER = "<br>".join([""] * 15)
 CACHED_DIR = tempfile.mkdtemp()
 
 CACHED_IMAGES = {}
+
+FMT_2D_IMAGE = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif"]
+
+FMT_3D_IMAGE = [".nii", ".nii.gz", ".nrrd"]
 
 TITLE = """
 <div style="text-align: center; max-width: 800px; margin: 0 auto; padding: 20px;">
@@ -164,12 +174,12 @@ def cache_images():
         if CACHED_IMAGES[item].endswith(".nii.gz"):
             data = nib.load(CACHED_IMAGES[item]).get_fdata()
             for slice_index in tqdm(range(data.shape[2])):
-                image_filename = get_slice_filenames(CACHED_IMAGES[item], slice_index)[0]
+                image_filename = get_slice_filenames(CACHED_IMAGES[item], slice_index)
                 if not os.path.exists(os.path.join(CACHED_DIR, image_filename)):
                     compose = get_monai_transforms(
                         ["image"],
                         CACHED_DIR,
-                        modality="CT",  # TODO: Get the modality from the image/prompt/metadata
+                        modality=get_modality(item),
                         slice_index=slice_index,
                         image_filename=image_filename,
                     )
@@ -277,18 +287,22 @@ class SessionVariables:
         self.use_model_cards = True
         self.slice_index = None  # Slice index for 3D images
         self.image_url = None  # Image URL to the image on the web
-        self.image_url_backup = None  # Backup image URL
+        self.backup = {}  # Cached varaiables from previous messages for the current conversation
         self.axis = 2
         self.top_p = 0.9
         self.temperature = 0.0
         self.max_tokens = 1024
-        self.download_file_path = ""  # Path to the downloaded file
         self.temp_working_dir = None
         self.idx_range = (None, None)
         self.interactive = False
         self.sys_msgs_to_hide = []
         self.modality_prompt = "Auto"
 
+    def restore_from_backup(self, attr):
+        """Retrieve the attribute from the backup"""
+        attr_val = self.backup.get(attr, None)
+        if attr_val is not None:
+            self.__setattr__(attr, attr_val)
 
 def new_session_variables(**kwargs):
     """Create a new session variables but keep the conversation mode"""
@@ -459,7 +473,7 @@ class M3Generator:
             if img_file.endswith(".nii.gz"):  # Take the specific slice from a volume
                 chat_history.append(
                     _prompt,
-                    image_path=os.path.join(CACHED_DIR, get_slice_filenames(img_file, sv.slice_index)[0]),
+                    image_path=os.path.join(CACHED_DIR, get_slice_filenames(img_file, sv.slice_index)),
                 )
             else:
                 chat_history.append(_prompt, image_path=img_file)
@@ -469,7 +483,6 @@ class M3Generator:
         else:
             raise ValueError(f"Invalid image file: {img_file}")
 
-        # need squash
         outputs = self.generate_response(
             messages=self.squash_expert_messages_into_user(chat_history.messages),
             max_tokens=sv.max_tokens,
@@ -482,7 +495,6 @@ class M3Generator:
 
         # check the message mentions any expert model
         expert = None
-        download_pkg = ""
 
         for expert_model in [ExpertTXRV, ExpertVista3D]:
             expert = expert_model() if expert_model().mentioned_by(outputs) else None
@@ -493,25 +505,23 @@ class M3Generator:
             logger.debug(f"Expert model {expert.__class__.__name__} is being called to process {sv.image_url}.")
             try:
                 if sv.image_url is None:
-                    logger.debug(f"Image URL is None. Calling the backup image URL. {sv.image_url_backup}")
-                    sv.image_url = sv.image_url_backup
-                    if sv.image_url is None:
-                        raise ValueError(f"No image is provided with {outputs}.")
-                text_output, seg_file, instruction, download_pkg = expert.run(
+                    logger.debug("Image URL is None. Try restoring the image URL from the backup to continue expert processing.")
+                    sv.restore_from_backup("image_url")
+                    sv.restore_from_backup("slice_index")
+                text_output, seg_image, instruction = expert.run(
                     image_url=sv.image_url,
                     input=outputs,
                     output_dir=sv.temp_working_dir,
-                    img_file=img_file,
+                    img_file=CACHED_IMAGES.get(sv.image_url, None),
                     slice_index=sv.slice_index,
                     prompt=prompt,
                 )
             except Exception as e:
                 text_output = f"Sorry I met an error: {e}"
-                seg_file = None
+                seg_image = None
                 instruction = ""
-                download_pkg = ""
 
-            chat_history.append(text_output, image_path=seg_file, role="expert")
+            chat_history.append(text_output, image_path=seg_image, role="expert")
             if instruction:
                 chat_history.append(instruction, role="expert")
                 outputs = self.generate_response(
@@ -528,14 +538,13 @@ class M3Generator:
             sys_prompt=sv.sys_prompt,
             sys_msg=sv.sys_msg,
             use_model_cards=sv.use_model_cards,
-            download_file_path=download_pkg,
             temp_working_dir=sv.temp_working_dir,
             max_tokens=sv.max_tokens,
             temperature=sv.temperature,
             top_p=sv.top_p,
             interactive=True,
             sys_msgs_to_hide=sv.sys_msgs_to_hide,
-            image_url_backup=sv.image_url,
+            backup={"image_url": sv.image_url, "slice_index": sv.slice_index},
         )
         return (
             None,
@@ -575,7 +584,7 @@ def update_image_selection(selected_image, sv: SessionVariables, slice_index=Non
             # There is no need to update the idx_range.
             sv.slice_index = slice_index
 
-        image_filename = get_slice_filenames(img_file, sv.slice_index)[0]
+        image_filename = get_slice_filenames(img_file, sv.slice_index)
         if not os.path.exists(os.path.join(CACHED_DIR, image_filename)):
             raise ValueError(f"Image file {image_filename} does not exist.")
         return (
@@ -623,7 +632,7 @@ def colorcode_message(text="", data_url=None, show_all=False, role="user", sys_m
 
 def clear_one_conv(sv: SessionVariables):
     """
-    Post-event hook indicating the session ended.It's called when `new_session_variables` finishes.
+    Post-event hook indicating the session ended. It's called when `new_session_variables` finishes.
     Particularly, it resets the non-text parameters. So it excludes:
         - prompt_edit
         - chat_history
@@ -634,11 +643,15 @@ def clear_one_conv(sv: SessionVariables):
     If some of the parameters need to stay persistent in the session, they should be modified in the `clear_all_convs` function.
     """
     logger.debug(f"Clearing the parameters of one conversation")
-    if sv.download_file_path != "":
-        name = os.path.basename(sv.download_file_path)
-        filepath = sv.download_file_path
-        sv.download_file_path = ""
-        d_btn = gr.DownloadButton(label=f"Download {name}", value=filepath, visible=True)
+    image_files = os.listdir(sv.temp_working_dir) if sv.temp_working_dir is not None else []
+    image_files = [f for f in image_files if any(f.endswith(ext) for ext in FMT_2D_IMAGE + FMT_3D_IMAGE)]
+    if len(image_files) > 0:
+        # zip the files
+        zip_file = os.path.join(sv.temp_working_dir, "results.zip")
+        with ZipFile(zip_file, "w") as zipf:
+            for file in image_files:
+                zipf.write(os.path.join(sv.temp_working_dir, file), file)
+        d_btn = gr.DownloadButton(label=f"Download Results From the Expert Model", value=zip_file, visible=True)
     else:
         d_btn = gr.DownloadButton(visible=False)
     # Order of output: image, image_selector, temperature_slider, top_p_slider, max_tokens_slider, download_button, image_slider
