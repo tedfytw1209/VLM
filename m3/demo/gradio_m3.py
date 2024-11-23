@@ -17,30 +17,22 @@ import tempfile
 import time
 from copy import deepcopy
 from glob import glob
-from shutil import copyfile, rmtree
+from shutil import rmtree
 from zipfile import ZipFile
 
 import gradio as gr
-import nibabel as nib
 import torch
 from dotenv import load_dotenv
+from experts.expert_monai_brats import ExpertBrats
 from experts.expert_monai_vista3d import ExpertVista3D
 from experts.expert_torchxrayvision import ExpertTXRV
-from experts.utils import (
-    get_modality,
-    get_monai_transforms,
-    get_slice_filenames,
-    image_to_data_url,
-    load_image,
-    save_image_url_to_file,
-)
+from experts.utils import ImageCache, get_modality, get_slice_filenames, image_to_data_url, load_image
 from huggingface_hub import snapshot_download
 from llava.constants import IMAGE_TOKEN_INDEX
 from llava.conversation import SeparatorStyle, conv_templates
 from llava.mm_utils import KeywordsStoppingCriteria, get_model_name_from_path, process_images, tokenizer_image_token
 from llava.model.builder import load_pretrained_model
 from llava.utils import disable_torch_init
-from tqdm import tqdm
 
 load_dotenv()
 
@@ -69,12 +61,12 @@ logging.getLogger("gradio").setLevel(logging.WARNING)
 IMG_URLS_OR_PATHS = {
     "CT Sample 1": "https://developer.download.nvidia.com/assets/Clara/monai/samples/ct_liver_0.nii.gz",
     "CT Sample 2": "https://developer.download.nvidia.com/assets/Clara/monai/samples/ct_sample.nii.gz",
-    # "MRI Sample 1": [
-    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t1.nii.gz",
-    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t1ce.nii.gz",
-    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t2.nii.gz",
-    #     "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_flair.nii.gz",
-    # ],
+    "MRI Sample 1": [
+        "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t1.nii.gz",
+        "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t1ce.nii.gz",
+        "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_t2.nii.gz",
+        "https://developer.download.nvidia.com/assets/Clara/monai/samples/mri_Brats18_2013_31_1_flair.nii.gz",
+    ],
     "Chest X-ray Sample 1": "https://developer.download.nvidia.com/assets/Clara/monai/samples/cxr_00026451_030.jpg",
     "Chest X-ray Sample 2": "https://developer.download.nvidia.com/assets/Clara/monai/samples/cxr_00029943_005.jpg",
 }
@@ -93,6 +85,7 @@ EXAMPLE_PROMPTS_3D = [
     ["Separate the gastrointestinal region from the surrounding tissue in this image."],
     ["Can you assist me in segmenting the bony structures in this image?"],
     ["Describe the image in detail"],
+    ["Segment the image using BRATS"],
 ]
 
 EXAMPLE_PROMPTS_2D = [
@@ -109,9 +102,7 @@ EXAMPLE_PROMPTS_2D = [
 
 HTML_PLACEHOLDER = "<br>".join([""] * 15)
 
-CACHED_DIR = tempfile.mkdtemp()
-
-CACHED_IMAGES = {}
+CACHED_IMAGES = ImageCache(cache_dir=tempfile.mkdtemp())
 
 FMT_2D_IMAGE = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif"]
 
@@ -156,40 +147,6 @@ CSS_STYLES = (
     "font-size: 6px;\n"
     "}\n"
 )
-
-
-def cache_images():
-    """Cache the image and return the file path"""
-    logger.debug(f"Caching the image to {CACHED_DIR}")
-    for _, item in IMG_URLS_OR_PATHS.items():
-        if item.startswith("http"):
-            CACHED_IMAGES[item] = save_image_url_to_file(item, CACHED_DIR)
-        elif os.path.exists(item):
-            # move the file to the cache directory
-            file_name = os.path.basename(item)
-            CACHED_IMAGES[item] = os.path.join(CACHED_DIR, file_name)
-            if not os.path.isfile(CACHED_IMAGES[item]):
-                copyfile(item, CACHED_IMAGES[item])
-
-        if CACHED_IMAGES[item].endswith(".nii.gz"):
-            data = nib.load(CACHED_IMAGES[item]).get_fdata()
-            for slice_index in tqdm(range(data.shape[2])):
-                image_filename = get_slice_filenames(CACHED_IMAGES[item], slice_index)
-                if not os.path.exists(os.path.join(CACHED_DIR, image_filename)):
-                    compose = get_monai_transforms(
-                        ["image"],
-                        CACHED_DIR,
-                        modality=get_modality(item),
-                        slice_index=slice_index,
-                        image_filename=image_filename,
-                    )
-                    compose({"image": CACHED_IMAGES[item]})
-
-
-def cache_cleanup():
-    """Clean up the cache"""
-    logger.debug(f"Cleaning up the cache")
-    rmtree(CACHED_DIR)
 
 
 class ChatHistory:
@@ -270,9 +227,13 @@ class ChatHistory:
                         text=content["text"], show_all=show_all, role=role, sys_msgs_to_hide=sys_msgs_to_hide
                     )
                 else:
-                    history_text_html += colorcode_message(
-                        data_url=image_to_data_url(content["image_path"], max_size=(300, 300)), show_all=True, role=role
-                    )  # always show the image
+                    image_paths = (
+                        content["image_path"] if isinstance(content["image_path"], list) else [content["image_path"]]
+                    )
+                    for image_path in image_paths:
+                        history_text_html += colorcode_message(
+                            data_url=image_to_data_url(image_path, max_size=(300, 300)), show_all=True, role=role
+                        )  # always show the image
             history.append(history_text_html)
         return "<br>".join(history)
 
@@ -303,6 +264,7 @@ class SessionVariables:
         attr_val = self.backup.get(attr, None)
         if attr_val is not None:
             self.__setattr__(attr, attr_val)
+
 
 def new_session_variables(**kwargs):
     """Create a new session variables but keep the conversation mode"""
@@ -362,7 +324,11 @@ class M3Generator:
                 if content["type"] == "text":
                     prompt += content["text"]
                 if content["type"] == "image_path":
-                    images.append(load_image(content["image_path"]))
+                    image_paths = (
+                        content["image_path"] if isinstance(content["image_path"], list) else [content["image_path"]]
+                    )
+                    for image_path in image_paths:
+                        images.append(load_image(image_path))
             conv.append_message(role, prompt)
 
         if conv.sep_style == SeparatorStyle.LLAMA_3:
@@ -459,7 +425,7 @@ class M3Generator:
 
         model_cards = sv.sys_msg if sv.use_model_cards else ""
 
-        img_file = CACHED_IMAGES.get(sv.image_url, None)
+        img_file = CACHED_IMAGES.get(sv.image_url, None, list_return=True)
 
         if isinstance(img_file, str):
             if "<image>" not in prompt:
@@ -473,10 +439,21 @@ class M3Generator:
             if img_file.endswith(".nii.gz"):  # Take the specific slice from a volume
                 chat_history.append(
                     _prompt,
-                    image_path=os.path.join(CACHED_DIR, get_slice_filenames(img_file, sv.slice_index)),
+                    image_path=os.path.join(CACHED_IMAGES.dir(), get_slice_filenames(img_file, sv.slice_index)),
                 )
             else:
                 chat_history.append(_prompt, image_path=img_file)
+        elif isinstance(img_file, list):
+            # multi-modal images
+            prompt = (
+                prompt.replace("<image>", "") if "<image>" in prompt else prompt
+            )  # remove the image token if it's in the prompt
+            special_token = "T1(contrast enhanced): <image1>, T1: <image2>, T2: <image3>, FLAIR: <image4> "
+            mod_msg = f"These are different {modality} modalities.\n"
+            _prompt = model_cards + special_token + mod_msg + prompt
+            image_paths = [os.path.join(CACHED_IMAGES.dir(), get_slice_filenames(f, sv.slice_index)) for f in img_file]
+            chat_history.append(_prompt, image_path=image_paths)
+            sv.sys_msgs_to_hide.append(model_cards + special_token + mod_msg)
         elif img_file is None:
             # text-only prompt
             chat_history.append(prompt)  # no image token
@@ -496,7 +473,7 @@ class M3Generator:
         # check the message mentions any expert model
         expert = None
 
-        for expert_model in [ExpertTXRV, ExpertVista3D]:
+        for expert_model in [ExpertTXRV, ExpertVista3D, ExpertBrats]:
             expert = expert_model() if expert_model().mentioned_by(outputs) else None
             if expert:
                 break
@@ -505,14 +482,16 @@ class M3Generator:
             logger.debug(f"Expert model {expert.__class__.__name__} is being called to process {sv.image_url}.")
             try:
                 if sv.image_url is None:
-                    logger.debug("Image URL is None. Try restoring the image URL from the backup to continue expert processing.")
+                    logger.debug(
+                        "Image URL is None. Try restoring the image URL from the backup to continue expert processing."
+                    )
                     sv.restore_from_backup("image_url")
                     sv.restore_from_backup("slice_index")
                 text_output, seg_image, instruction = expert.run(
                     image_url=sv.image_url,
                     input=outputs,
                     output_dir=sv.temp_working_dir,
-                    img_file=CACHED_IMAGES.get(sv.image_url, None),
+                    img_file=CACHED_IMAGES.get(sv.image_url, None, list_return=True),
                     slice_index=sv.slice_index,
                     prompt=prompt,
                 )
@@ -574,7 +553,7 @@ def update_image_selection(selected_image, sv: SessionVariables, slice_index=Non
     sv.interactive = True
     if img_file.endswith(".nii.gz"):
         if slice_index is None:
-            slice_file_pttn = img_file.replace(".nii.gz", "*_img.jpg")
+            slice_file_pttn = img_file.replace(".nii.gz", "_slice*_img.jpg")
             # glob the image files
             slice_files = glob(slice_file_pttn)
             sv.slice_index = len(slice_files) // 2
@@ -585,10 +564,10 @@ def update_image_selection(selected_image, sv: SessionVariables, slice_index=Non
             sv.slice_index = slice_index
 
         image_filename = get_slice_filenames(img_file, sv.slice_index)
-        if not os.path.exists(os.path.join(CACHED_DIR, image_filename)):
+        if not os.path.exists(os.path.join(CACHED_IMAGES.dir(), image_filename)):
             raise ValueError(f"Image file {image_filename} does not exist.")
         return (
-            os.path.join(CACHED_DIR, image_filename),
+            os.path.join(CACHED_IMAGES.dir(), image_filename),
             sv,
             gr.Slider(sv.idx_range[0], sv.idx_range[1], value=sv.slice_index, step=1, visible=True, interactive=True),
             gr.Dataset(samples=EXAMPLE_PROMPTS_3D),
@@ -900,6 +879,6 @@ if __name__ == "__main__":
         help="The source of the model. Option is 'huggingface' or 'local'.",
     )
     args = parser.parse_args()
-    cache_images()
+    CACHED_IMAGES.cache(IMG_URLS_OR_PATHS)
     create_demo(args.source, args.modelpath, args.convmode, args.port)
-    cache_cleanup()
+    CACHED_IMAGES.cleanup()
