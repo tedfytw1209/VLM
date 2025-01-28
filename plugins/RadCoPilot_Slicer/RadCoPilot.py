@@ -70,10 +70,21 @@ class _ui_RadCoPilotSettingsPanel:
         groupLayout.addRow(_("Server address:"), serverUrl)
         parent.registerProperty("RadCoPilot/serverUrl", serverUrl, "text", str(qt.SIGNAL("textChanged(QString)")))
 
+        scanUrl = qt.QLineEdit()
+        groupLayout.addRow(_("Scan address:"), scanUrl)
+        parent.registerProperty("RadCoPilot/scanUrl", scanUrl, "text", str(qt.SIGNAL("textChanged(QString)")))
+
+
         serverUrlHistory = qt.QLineEdit()
         groupLayout.addRow(_("Server address history:"), serverUrlHistory)
         parent.registerProperty(
             "RadCoPilot/serverUrlHistory", serverUrlHistory, "text", str(qt.SIGNAL("textChanged(QString)"))
+        )
+
+        scanUrlHistory = qt.QLineEdit()
+        groupLayout.addRow(_("Scan address history:"), scanUrlHistory)
+        parent.registerProperty(
+            "RadCoPilot/scanUrlHistory", scanUrlHistory, "text", str(qt.SIGNAL("textChanged(QString)"))
         )
 
         fileExtension = qt.QLineEdit()
@@ -147,9 +158,12 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # in batch mode, without a graphical user interface.
         self.tmpdir = slicer.util.tempDirectory("slicer-radcopilot")
         self.logic = RadCoPilotLogic()
+        self.ui.scanComboBox.setEditable(True)
+        self.ui.serverComboBox.setEditable(True)
 
         # Set icons and tune widget properties
         self.ui.serverComboBox.lineEdit().setPlaceholderText("enter server address or leave empty to use default")
+        self.ui.scanComboBox.lineEdit().setPlaceholderText("enter scan address")
         self.ui.fetchServerInfoButton.setIcon(self.icon("refresh-icon.png"))
         self.ui.uploadImageButton.setIcon(self.icon("upload.svg"))
 
@@ -165,6 +179,9 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.cleanOutputButton.connect("clicked(bool)", self.onClickCleanOutputButton)
         self.ui.uploadImageButton.connect("clicked(bool)", self.onUploadImage)
 
+        self.updateServerUrlGUIFromSettings()
+        self.updateScanUrlGUIFromSettings()
+
     def icon(self, name="RadCoPilot.png"):
         '''Get the icon for the RadCoPilot module.'''
         # It should not be necessary to modify this method
@@ -178,6 +195,10 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.logic.setServer(self.serverUrl())
         self.saveServerUrl()
 
+    def updateScanSettings(self):
+        '''Update the scan settings based on the current UI state.'''
+        self.saveScanUrl()        
+
     def serverUrl(self):
         '''Get the current server URL from the UI.'''
         serverUrl = self.ui.serverComboBox.currentText.strip()
@@ -185,6 +206,38 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             serverUrl = "http://localhost:8000"
         # return serverUrl.rstrip("/")
         return serverUrl
+    
+    def scanUrl(self):
+        '''Get the current scan URL from the UI.'''
+        scanUrl = self.ui.scanComboBox.currentText.strip()
+        if not scanUrl:
+            print("Scan address is empty ... ")
+            return None
+        return scanUrl    
+    
+    def updateServerUrlGUIFromSettings(self):
+        # Save current server URL to the top of history
+        settings = qt.QSettings()
+        serverUrlHistory = settings.value("RadCoPilot/serverUrlHistory")
+
+        wasBlocked = self.ui.serverComboBox.blockSignals(True)
+        self.ui.serverComboBox.clear()
+        if serverUrlHistory:
+            self.ui.serverComboBox.addItems(serverUrlHistory.split(";"))
+        self.ui.serverComboBox.setCurrentText(settings.value("RadCoPilot/serverUrl"))
+        self.ui.serverComboBox.blockSignals(wasBlocked) 
+
+    def updateScanUrlGUIFromSettings(self):
+        # Save current scan URL to the top of history
+        settings = qt.QSettings()
+        scanUrlHistory = settings.value("RadCoPilot/scanUrlHistory")
+
+        wasBlocked = self.ui.scanComboBox.blockSignals(True)
+        self.ui.scanComboBox.clear()
+        if scanUrlHistory:
+            self.ui.scanComboBox.addItems(scanUrlHistory.split(";"))
+        self.ui.scanComboBox.setCurrentText(settings.value("RadCoPilot/scanUrl"))
+        self.ui.scanComboBox.blockSignals(wasBlocked)            
 
     def saveServerUrl(self):
         '''Save the current server URL to settings and update history.'''
@@ -210,7 +263,34 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         serverUrlHistory = serverUrlHistory[:10]  # keep up to first 10 elements
         settings.setValue("RadCoPilot/serverUrlHistory", ";".join(serverUrlHistory))
 
-        # self.updateServerUrlGUIFromSettings()
+        self.updateServerUrlGUIFromSettings()
+
+
+    def saveScanUrl(self):
+        '''Save the current scan URL to settings and update history.'''
+        # self.updateParameterNodeFromGUI()
+
+        # Save selected server URL
+        settings = qt.QSettings()
+        scanUrl = self.ui.scanComboBox.currentText
+        settings.setValue("RadCoPilot/scanUrl", scanUrl)
+
+        # Save current scan URL to the top of history
+        scanUrlHistory = settings.value("RadCoPilot/serverUrlHistory")
+        if scanUrlHistory:
+            scanUrlHistory = scanUrlHistory.split(";")
+        else:
+            scanUrlHistory = []
+        try:
+            scanUrlHistory.remove(scanUrl)
+        except ValueError:
+            pass
+
+        scanUrlHistory.insert(0, scanUrl)
+        scanUrlHistory = scanUrlHistory[:10]  # keep up to first 10 elements
+        settings.setValue("RadCoPilot/scanUrlHistory", ";".join(scanUrlHistory))
+
+        self.updateScanUrlGUIFromSettings()        
 
     def show_popup(self, title, message):
         '''Display a popup message box with the given title and message.'''
@@ -225,6 +305,7 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         try:
             self.updateServerSettings()
+            self.updateScanSettings()
             info = self.logic.info()
             self.info = info
 
@@ -249,14 +330,32 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onClickCleanOutputButton(self):
         '''Handle the click event for cleaning the output text.'''
         self.ui.outputText.clear()
-
+            
     def onUploadImage(self):
-        '''Gets the volume and sen it to the server.'''
-        volumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-        image_id = volumeNode.GetName()
-
+        '''Gets the text from scanComboBox or the volume from the viewport and sends it to the server.'''
         try:
             qt.QApplication.setOverrideCursor(qt.Qt.WaitCursor)
+            
+            # Check if there's text in the scanComboBox
+            scan_text = self.ui.scanComboBox.currentText
+            if scan_text:
+                # Send the text directly
+                info = self.logic.uploadScan(scan_text)
+                self.info = info
+                print(f"Response from the upload text call: {self.info['status']}")
+                self.reportProgress(100)
+                qt.QApplication.restoreOverrideCursor()
+                self.show_popup("Information", "Text uploaded")
+                return True
+            
+            # If no text, check for a volume in the viewport
+            volumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+            if not volumeNode:
+                qt.QApplication.restoreOverrideCursor()
+                self.show_popup("Error", "No text in scanComboBox and no volume in viewport")
+                return False
+            
+            image_id = volumeNode.GetName()
             in_file = tempfile.NamedTemporaryFile(suffix=self.file_ext, dir=self.tmpdir).name
             self.current_sample = in_file
             self.reportProgress(5)
@@ -279,7 +378,9 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             msg = f"Message: {e.msg}" if hasattr(e, "msg") else ""
             self.reportProgress(100)
             qt.QApplication.restoreOverrideCursor()
+            self.show_popup("Error", f"Upload failed: {msg}")
             return False
+
 
     def reportProgress(self, progressPercentage):
         '''Reports progress of an event.'''
