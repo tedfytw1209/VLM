@@ -121,6 +121,7 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._updatingGUIFromParameterNode = False
 
         self.info = {}
+        self.current_model = None
         self.current_sample = None
         self.samples = {}
         self.state = {
@@ -307,6 +308,7 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.updateServerSettings()
             self.updateScanSettings()
             info = self.logic.info()
+            self.current_model = info
             self.info = info
 
             print(f"Connected to RadCoPilot Server - Obtained info from server: {self.info}")
@@ -394,7 +396,14 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def has_text(self, ui_text):
         '''Check if the given UI text element has any content.'''
         return len(ui_text.toPlainText()) < 1
+    
+    def _get_answer_text(self, response):
+        '''Get the VILA-M3 response.'''
 
+        final_response = response['choices'][0]['message']['content']['content'][0]['text']
+
+        return final_response
+    
     def onClickSendPrompt(self):
         '''Handle the click event for sending a prompt to the server.'''
         if not self.logic:
@@ -414,7 +423,10 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             info = self.logic.getAnswer(inputText=inText, volumePath=self.current_sample)
             if info is not None:
                 self.info = info
-                self.ui.outputText.setText(info['choices'][0]['message']['content'])
+                if 'VILA-M3' in self.current_model:
+                    self.ui.outputText.setText(self._get_answer_text(info))
+                else:
+                    self.ui.outputText.setText(info['choices'][0]['message']['content'])
             logging.info(f"Time consumed by fetch info: {time.time() - start:3.1f}")
 
 
