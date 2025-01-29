@@ -171,6 +171,7 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # start with button disabled
         self.ui.sendPrompt.setEnabled(False)
         self.ui.uploadImageButton.setEnabled(False)
+        self.ui.fetchImageButton.setEnabled(False)
         self.ui.outputText.setReadOnly(True)
 
         # Connections
@@ -179,6 +180,8 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.sendPrompt.connect("clicked(bool)", self.onClickSendPrompt)
         self.ui.cleanOutputButton.connect("clicked(bool)", self.onClickCleanOutputButton)
         self.ui.uploadImageButton.connect("clicked(bool)", self.onUploadImage)
+        self.ui.fetchImageButton.connect("clicked(bool)", self.onFetchImage)
+        
 
         self.updateServerUrlGUIFromSettings()
         self.updateScanUrlGUIFromSettings()
@@ -312,12 +315,11 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.info = info
 
             print(f"Connected to RadCoPilot Server - Obtained info from server: {self.info}")
-            self.show_popup("Information", "Connected to RadCoPilot Server")
             self.ui.sendPrompt.setEnabled(True)
             self.ui.uploadImageButton.setEnabled(True)
+            self.ui.fetchImageButton.setEnabled(True)
             # Updating model name
-            self.ui.appComboBox.clear()
-            self.ui.appComboBox.addItem(self.info)
+            self.ui.appDescriptionLabel.text = self.info
 
         except AttributeError as e:
             slicer.util.errorDisplay(
@@ -332,31 +334,53 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onClickCleanOutputButton(self):
         '''Handle the click event for cleaning the output text.'''
         self.ui.outputText.clear()
+
+    def reportProgress2(self, msg, level=None):
+        '''Print progress in the console.'''
+        print("Loading... {0}%".format(self.sampleDataLogic.downloadPercent))
+        # Abort download if cancel is clicked in progress bar
+        if self.progressWindow.wasCanceled:
+            raise Exception("download aborted")
+        # Update progress window
+        self.progressWindow.show()
+        self.progressWindow.activateWindow()
+        self.progressWindow.setValue(int(self.sampleDataLogic.downloadPercent))
+        self.progressWindow.setLabelText("Downloading...")
+        # Process events to allow screen to refresh
+        slicer.app.processEvents()
+
+    def onFetchImage(self):
+        '''Fetch an image from an URL.'''
+        import SampleData
+
+        try:
+            scan_url = self.ui.scanComboBox.currentText
+            volumeNode = None
+            self.progressWindow = slicer.util.createProgressDialog()
+            self.sampleDataLogic = SampleData.SampleDataLogic()
+            self.sampleDataLogic.logMessage = self.reportProgress2
+            loadedNodes = self.sampleDataLogic.downloadFromURL(
+                nodeNames="CTVolume",
+                fileNames="ct_liver_0.nii.gz",
+                uris=scan_url,
+                #checksums="SHA256:cc211f0dfd9a05ca3841ce1141b292898b2dd2d3f08286affadf823a7e58df93"
+                )
+            volumeNode = loadedNodes[0]
+            self.ui.inputVolumeNodeComboBox.setCurrentNode(volumeNode)
+            # Sending url to the server
+            info = self.logic.uploadScan(scan_url)
+            self.info = info
+            print(f"Response from the upload text call: {self.info['status']}")
+            
+        finally:
+            self.progressWindow.close()
             
     def onUploadImage(self):
         '''Gets the text from scanComboBox or the volume from the viewport and sends it to the server.'''
         try:
             qt.QApplication.setOverrideCursor(qt.Qt.WaitCursor)
-            
-            # Check if there's text in the scanComboBox
-            scan_text = self.ui.scanComboBox.currentText
-            if scan_text:
-                # Send the text directly
-                info = self.logic.uploadScan(scan_text)
-                self.info = info
-                print(f"Response from the upload text call: {self.info['status']}")
-                self.reportProgress(100)
-                qt.QApplication.restoreOverrideCursor()
-                self.show_popup("Information", "Text uploaded")
-                return True
-            
-            # If no text, check for a volume in the viewport
-            volumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-            if not volumeNode:
-                qt.QApplication.restoreOverrideCursor()
-                self.show_popup("Error", "No text in scanComboBox and no volume in viewport")
-                return False
-            
+        
+            volumeNode = self.ui.inputVolumeNodeComboBox.currentNode()            
             image_id = volumeNode.GetName()
             in_file = tempfile.NamedTemporaryFile(suffix=self.file_ext, dir=self.tmpdir).name
             self.current_sample = in_file
