@@ -216,7 +216,7 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         return scanUrl    
     
     def updateServerUrlGUIFromSettings(self):
-        # Save current server URL to the top of history
+        '''Save current server URL to the top of history.'''
         settings = qt.QSettings()
         serverUrlHistory = settings.value("RadCoPilot/serverUrlHistory")
 
@@ -228,7 +228,7 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.serverComboBox.blockSignals(wasBlocked) 
 
     def updateScanUrlGUIFromSettings(self):
-        # Save current scan URL to the top of history
+        '''Save current scan URL to the top of history.'''
         settings = qt.QSettings()
         scanUrlHistory = settings.value("RadCoPilot/scanUrlHistory")
 
