@@ -458,6 +458,7 @@ class RadCoPilotWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             logging.info(f"Time consumed by fetch info: {time.time() - start:3.1f}")
 
     def onRecordAudio(self):
+        '''Handles the voice prompts sent to the server.'''
         audioRecorder = qt.QAudioRecorder()
 
         # Select default audio input
