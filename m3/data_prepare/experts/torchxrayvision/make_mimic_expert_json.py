@@ -100,7 +100,7 @@ def get_item(fname, p_in, p_out, expert=None):
 with open(orig_csv, "r") as f:
     lines = f.readlines()
 label_dict = {x.split(",", 1)[1].split(",", 1)[0]: x.strip() for x in lines[1:]}
-path_dict = {os.path.basename(fname):fname for fname in glob(os.path.join(image_base, "*.jpg"))}
+path_dict = {os.path.basename(fname):fname for fname in glob("*.jpg",root_dir=image_base)}
 print(len(label_dict), len(path_dict))
 print(path_dict)
 headers = lines[0]
