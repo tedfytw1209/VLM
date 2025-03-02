@@ -13,7 +13,7 @@ import argparse
 import os
 import pprint
 import sys
-from glob import glob
+from pathlib import Path
 
 import skimage
 import skimage.io
@@ -45,7 +45,8 @@ output_full_dir = os.path.join(cfg.out_dir, cfg.weights)
 if not os.path.exists(output_full_dir):
     os.makedirs(output_full_dir, exist_ok=True)
 
-for item in glob(os.path.join(cfg.img_path, "*.jpg")):
+img_path = Path(cfg.img_path)
+for item in list(img_path.rglob(".jpg")):
     img = skimage.io.imread(item)
     img = xrv.datasets.normalize(img, 255)
 
