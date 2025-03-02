@@ -12,6 +12,7 @@
 import os
 import uuid
 import warnings
+from glob import glob
 
 import numpy as np
 from monai.bundle.config_parser import ConfigParser
@@ -55,12 +56,12 @@ prompts = [prompt] + prompts  # all prompts
 # prompts = [prompt]  # multiple-choice only
 binary_prompt_only = False
 
-split_csv = "/data/datasets/mimic-cxr/61487/mimic-cxr-2.0.0-split.csv"
-orig_csv = "/data/datasets/mimic-cxr/61487/mimic-cxr-2.0.0-merged-chexpert.csv"
-image_base = "/data/datasets/mimic-cxr/61487/images/"
-expert_base = "/data/datasets/mimic-cxr/torchxrayvision"
+split_csv = "mimic-cxr-2.0.0-split.csv"
+orig_csv = "mimic-cxr-2.0.0-merged-chexpert.csv"
+image_base = "/red/chenaokun1990/VLM_dataset/ReportGeneration/MIMIC-CXR_JPG/files/"
+expert_base = "/red/chenaokun1990/tienyu/torchxrayvision"
 expert_models = ["ensemble"]
-out_json = "/data/datasets/mimic-cxr/vila_data/mimic-cxr-2.0.0-train-expert-balanced-multi-simple.json"
+out_json = "mimic-cxr-2.0.0-train-expert-balanced-multi-simple.json"
 freqs = [
     47629.0,
     46373.0,
@@ -99,6 +100,7 @@ def get_item(fname, p_in, p_out, expert=None):
 with open(orig_csv, "r") as f:
     lines = f.readlines()
 label_dict = {x.split(",", 1)[1].split(",", 1)[0]: x.strip() for x in lines[1:]}
+path_dict = {os.path.basename(fname):fname for fname in glob(os.path.join(image_base, "*.jpg"))}
 headers = lines[0]
 
 with open(split_csv, "r") as f:
@@ -118,7 +120,8 @@ for idx, line in enumerate(split_lines):
     label_line = label_dict[fname]
     if not fname.endswith("jpg"):
         fname += ".jpg"
-    full_name = os.path.join(image_base, fname)
+    fname_path = path_dict.get(fname, None)
+    full_name = os.path.join(image_base, fname_path)
     if not os.path.isfile(full_name):
         warnings.warn(f"image not found {idx}: {full_name}", stacklevel=2)
         continue
@@ -161,10 +164,10 @@ for idx, line in enumerate(split_lines):
                         if not any(flags)
                         else ",".join([f"({x}) {classes[x]}" for x, y in zip(chars, flags) if y])
                     )
-                out_dicts.append(get_item(fname, p_in, p_out, expert_results))
+                out_dicts.append(get_item(fname_path, p_in, p_out, expert_results))
         else:
             p_out = "Yes" if flags[p_id - 1] else "No"
-            out_dicts.append(get_item(fname, p_in, p_out, expert_results))
+            out_dicts.append(get_item(fname_path, p_in, p_out, expert_results))
     sum_cls += np.asarray(flags)
     sum_others += 1
     sum_neg += float(not any(flags))
