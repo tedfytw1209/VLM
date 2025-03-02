@@ -101,6 +101,8 @@ with open(orig_csv, "r") as f:
     lines = f.readlines()
 label_dict = {x.split(",", 1)[1].split(",", 1)[0]: x.strip() for x in lines[1:]}
 path_dict = {os.path.basename(fname):fname for fname in glob(os.path.join(image_base, "*.jpg"))}
+print(len(label_dict), len(path_dict))
+print(path_dict)
 headers = lines[0]
 
 with open(split_csv, "r") as f:
@@ -120,7 +122,7 @@ for idx, line in enumerate(split_lines):
     label_line = label_dict[fname]
     if not fname.endswith("jpg"):
         fname += ".jpg"
-    fname_path = path_dict.get(fname, None)
+    fname_path = path_dict[fname]
     full_name = os.path.join(image_base, fname_path)
     if not os.path.isfile(full_name):
         warnings.warn(f"image not found {idx}: {full_name}", stacklevel=2)
